@@ -9,11 +9,9 @@ names(df) <- gsub("\\.+", "_", names(df))
 
 str(df) # Uncomment this and  run just the lines to here to get column types to use for getting the list of measures.
 
-#new_df <- subset(df, select = "atvtype ","barrels08", "barrelsA08", "city08", "cityA08", "co2", "co2A", "comb08", "combA08", "cylinders", "fuelCost08", "fuelCostA08", "fuelType", "fuelType1", "fuelType2", "highway08", "highwayA08", "hlv","hpv", "lv2", "lv4", "mpgData", "pv2", "pv4", "year")
-
 
 # Generate List of Measures
-measures <- c("barrels08", "barrelsA08", "charge120","charge240","city08", "cityA08", "co2", "co2A", "comb08", "combA08", "fuelCost08", "fuelCostA08", "highway08", "highwayA08", "hlv","hpv", "lv2", "lv4", "mpgData", "pv2", "pv4")
+measures <- c("barrels08", "barrelsA08", "charge120","charge240","city08", "cityA08", "co2TailpipeAGpm", "co2TailpipeGpm", "comb08", "combA08", "fuelCost08", "fuelCostA08", "highway08", "highwayA08", "hlv","hpv", "lv2", "lv4", "pv2", "pv4")
 
 ,# Get rid of special characters in each column.
 # Google ASCII Table to understand the following:
@@ -21,12 +19,6 @@ for(n in names(df)) {
   df[n] <- data.frame(lapply(df[n], gsub, pattern="[^ -~]",replacement= ""))
 }
 
-#df<-df[,"atvtype","barrels08", "barrelsA08", "city08", "cityA08", "co2", "co2A", "comb08", "combA08", "cylinders", "fuelCost08", "fuelCostA08", "fuelType", "fuelType1", "fuelType2", "highway08", "highwayA08", "hlv","hpv", "lv2", "lv4", "mpgData", "pv2", "pv4", "year"]
-
-#View(df_new)
-
-#newdataset <- intersect(names(df), columns_need)
-#dimensions <- setdiff(names(newdataset), measures)
 dimensions <- setdiff(names(df), measures)
 
 #dimensions
