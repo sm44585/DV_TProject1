@@ -1,57 +1,36 @@
+require(jsonlite)
+require(RCurl)
 # The following is equivalent to creat a crosstab with two KPIs in Tableau"
-MPG_PV2_KPI_LOW = 0.5   
-MPG_PV2_KPI_HIGH = 2
+#MPG_PV2_KPI_LOW = 0.5   
+#MPG_PV2_KPI_HIGH = 2
 
-crosstab <- data.frame(fromJSON(getURL(URLencode(gsub("\n", " ", '129.152.144.84:5001/rest/native/?query= 
-"select make, year, sum_comb08, round(sum_pv2) as sum_pv2, kpi_1 as pv2_ratio,
-case
-when kpi_1 < "p1" then \\\'03 Not Efficent and Spacious\\\'
-when kpi_1 < "p2" then \\\'02 Average Effciency and Space\\\'
-else \\\'01 Efficent and Spacious\\\'
-end kpi_1
-from (select make, year,
-  sum(comb08) sum_comb08, sum(pv2) sum_pv2,
-  sum(comb08) / sum(pv2) kpi_1
-  from vehicles
-  group by make, year)
-order by year;"
-')),httpheader=c(DB='jdbc:oracle:thin:@129.152.144.84:1521/PDBF15DV.usuniversi01134.oraclecloud.internal', USER='cs329e_cz4795', PASS='orcl_cz4795', MODE='native_mode', MODEL='model', returnDimensions = 'False', returnFor = 'JSON', p1=MPG_PV2_KPI_LOW, p2=MPG_PV2_KPI_HIGH), verbose = TRUE))); #View(df)
+crosstab <- vehicles %>% group_by(MAKE, YEAR) %>% summarize(sum_comb08 = sum(COMB08), sum_pv2 = sum(PV2),sum_pv4 = sum(PV4)) %>% mutate(ratio_1 = sum_comb08 / (sum_pv2+1))%>% mutate(ratio_2 = sum_comb08 / (sum_pv4+1)) %>% mutate(kpi_1 = ifelse(ratio_1 <= MPG_PV2_KPI_LOW, '03 Low', ifelse(ratio_1 <= MPG_PV2_KPI_HIGH, '02 Medium', '01 High')))%>% mutate(kpi_2 = ifelse(ratio_2 <= MPG_PV2_KPI_LOW, '03 Low', ifelse(ratio_2 <= MPG_PV2_KPI_HIGH, '02 Medium', '01 High'))) %>% rename(MAKE=MAKE, YEAR=YEAR, SUM_COMB08=sum_comb08, SUM_PV2=sum_pv2, RATIO_1=ratio_1, RATIO_2=ratio_2, KPI_1=kpi_1, KPI_2=kpi_2)%>%filter(MAKE %in% c("Acura", "Aston Martin", "Audi", "Bentley", "BMW", "Buick", "Chevrolet", "Dodge", "Ferrari", "Ford", "Honda", "Kia", "Lincoln", "Lexus", "Maserati", "Mazda", "Mercedes-Benz", "Nissan", "Toyota", "Volkswagen"))
 
-# df <- diamonds %>% group_by(color, clarity) %>% summarize(sum_price = sum(price), sum_carat = sum(carat)) %>% mutate(ratio = sum_price / sum_carat) %>% mutate(kpi = ifelse(ratio <= KPI_Low_Max_value, '03 Low', ifelse(ratio <= KPI_Medium_Max_value, '02 Medium', '01 High'))) %>% rename(COLOR=color, CLARITY=clarity, SUM_PRICE=sum_price, SUM_CARAT=sum_carat, RATIO=ratio, KPI=kpi)
-
-spread(df, COLOR, SUM_PRICE) %>% View
+#spread(crosstab, MAKE, YEAR) %>% View
 
 ggplot() + 
   coord_cartesian() + 
   scale_x_discrete() +
   scale_y_discrete() +
-  labs(title='Vehicles Crosstab\SUM_COMB08, SUM_PV2, SUM_PV4, SUM_COMB08 / SUM_PV2 and SUM_COMB08 / SUM_PV4') +
+  labs(title='Vehicles Crosstab') +
   labs(x=paste("MAKE"), y=paste("YEAR")) +
-  layer(data=df, 
-        mapping=aes(x=MAKE, y=YEAR, label=Calculated_MPG_PV2), 
-        stat="identity", 
-        stat_params=list(), 
-        geom="text",
-        geom_params=list(colour="black"), 
-        position=position_identity()
-  ) +
-  layer(data=df, 
-        mapping=aes(x=MAKE, y=YEAR, label=Calculated_MPG_PV4), 
-        stat="identity", 
-        stat_params=list(), 
-        geom="text",
-        geom_params=list(colour="black", vjust=2), 
-        position=position_identity()
-  ) +
-  layer(data=df, 
-        mapping=aes(x=MAKE, y=YEAR, label=round(RATIO, 2)), 
+  layer(data=crosstab, 
+        mapping=aes(x=MAKE, y=YEAR, label=round(RATIO_1, 2)), 
         stat="identity", 
         stat_params=list(), 
         geom="text",
         geom_params=list(colour="black", vjust=4), 
         position=position_identity()
   ) +
-  layer(data=df, 
+  layer(data=crosstab, 
+        mapping=aes(x=MAKE, y=YEAR, label=round(RATIO_2, 2)), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="text",
+        geom_params=list(colour="black", vjust=4), 
+        position=position_identity()
+  ) +
+  layer(data=crosstab, 
         mapping=aes(x=MAKE, y=YEAR, fill=KPI_1), 
         stat="identity", 
         stat_params=list(), 
@@ -59,7 +38,7 @@ ggplot() +
         geom_params=list(alpha=0.50), 
         position=position_identity()
   ) +
-  layer(data=df, 
+  layer(data=crosstab, 
         mapping=aes(x=MAKE, y=YEAR, fill=KPI_2), 
         stat="identity", 
         stat_params=list(), 
