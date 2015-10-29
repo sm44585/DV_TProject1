@@ -13,7 +13,7 @@ str(df) # Uncomment this and  run just the lines to here to get column types to 
 # Generate List of Measures
 measures <- c("barrels08", "barrelsA08", "charge120","charge240","city08", "cityA08", "co2TailpipeAGpm", "co2TailpipeGpm", "comb08", "combA08", "fuelCost08", "fuelCostA08", "highway08", "highwayA08", "hlv","hpv", "lv2", "lv4", "pv2", "pv4")
 
-,# Get rid of special characters in each column.
+# Get rid of special characters in each column.
 # Google ASCII Table to understand the following:
 for(n in names(df)) {
   df[n] <- data.frame(lapply(df[n], gsub, pattern="[^ -~]",replacement= ""))
