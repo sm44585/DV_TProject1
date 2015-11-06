@@ -1,0 +1,282 @@
+---
+title: "Project5"
+author: "Spencer Muncey and Chenchao Zang"
+date: "November 13, 2015"
+output: html_document
+---
+# Exploring U.S MPG data to create interesting visual representations for analysis SQL and R Studio
+For this project, we looked at the Environmental Protection Agency's [fuel economy data](https://www.fueleconomy.gov/feg/download.shtml) for every vehicle tested at the National Vehicle and Fuel Emissions Laboratory in Ann Arbor, Michigan since 1984. This dataset has data on almost 37,000 different vehicles, and includes many attributes to analyze. This is the R and SQL replication of the Tableau visualizations in Project 4
+
+###Summary of dataset and first ten rows
+```{r}
+require("jsonlite")
+require("RCurl")
+
+# Loads the data from Fast Food table into Fast Food dataframe
+# Change the USER and PASS below to be your UTEid
+vehicles <- data.frame(fromJSON(getURL(URLencode('skipper.cs.utexas.edu:5001/rest/native/?query="select ATVTYPE,BARRELS08,BARRELSA08,CITY08,CITYA08,CO2TAILPIPEAGPM,CO2TAILPIPEGPM,COMB08,COMBA08,CYLINDERS,FUELCOST08,FUELCOSTA08,FUELTYPE,FUELTYPE1,FUELTYPE2,HIGHWAY08,HIGHWAYA08,HLV,HPV,LV2,LV4,MPGDATA,PV2,PV4,YEAR,MAKE,TRANY from VEHICLES"'),httpheader=c(DB='jdbc:oracle:thin:@sayonara.microlab.cs.utexas.edu:1521:orcl', USER='C##cs329e_sm44585', PASS='orcl_sm44585', MODE='native_mode', MODEL='model', returnDimensions = 'False', returnFor = 'JSON'), verbose = TRUE),))
+
+summary(vehicles)
+
+```
+
+### A detailed explanation of each column that we used in the vehicles dataset:  
+
+* ATVTYPE - type of alternative fuel or advanced technology vehicle
+* BARRELS08 - annual petroleum consumption in barrels for fuelType1
+* BARRELSA08 - annual petroleum consumption in barrels for fuelType2
+* CITY08 - city MPG for fuelType1
+* CITYA08 - city MPG for fuelType2
+* CO2TAILPIPEGPM - tailpipe CO2 in grams/mile for fuelType1 
+* CO2TAILPIPEAGPM - tailpipe CO2 in grams/mile for fuelType2
+* COMB08 - combined MPG for fuelType1
+* COMBA08 - combined MPG for fuelType2
+* CYLINDERS - engine cylinders 
+* FUELCOST08 - annual fuel cost for fuelType1 ($) 
+* FUELCOSTA08 - annual fuel cost for fuelType2 ($)
+* FUELTYPE - fuel type with fuelType1 and fuelType2 (if applicable)
+* FUELTYPE1 - fuel type 1. For single fuel vehicles, this will be the only fuel. For dual fuel vehicles, this will be the conventional fuel
+* FUELTYPE2 - fuel type 2. For dual fuel vehicles, this will be the alternative fuel (e.g. E85, Electricity, CNG, LPG). For single fuel vehicles, this field is not used
+* HIGHWAY08 - highway MPG for fuelType1 
+* HIGHWAYA08 - highway MPG for fuelType2
+* HLV - hatchback luggage volume (cubic feet)
+* HPV - hatchback passenger volume (cubic feet)
+* LV2 - 2 door luggage volume (cubic feet)
+* LV4 - 4 door luggage volume (cubic feet)
+* MPGDATA - has My MPG data
+* PV2 - 2-door passenger volume (cubic feet)
+* PV4 - 4-door passenger volume (cubic feet)
+* TRANY - transmission
+* YEAR - model year
+
+###Extract, Load, Transform (ELT) Script for Oracle
+```
+#Before running this R file make sure you set you working directory to where the CSV file located.
+
+file_path <- "vehicles.csv"
+
+df <- read.csv(file_path, stringsAsFactors = FALSE)
+
+# Replace "." (i.e., period) with "_" in the column names.
+names(df) <- gsub("\\.+", "_", names(df))
+
+str(df) # Uncomment this and  run just the lines to here to get column types to use for getting the list of measures.
+
+
+# Generate List of Measures
+measures <- c("barrels08", "barrelsA08", "charge120","charge240","city08", "cityA08", "co2TailpipeAGpm", "co2TailpipeGpm", "comb08", "combA08", "fuelCost08", "fuelCostA08", "highway08", "highwayA08", "hlv","hpv", "lv2", "lv4", "pv2", "pv4")
+
+# Get rid of special characters in each column.
+# Google ASCII Table to understand the following:
+for(n in names(df)) {
+  df[n] <- data.frame(lapply(df[n], gsub, pattern="[^ -~]",replacement= ""))
+}
+
+dimensions <- setdiff(names(df), measures)
+
+#dimensions
+if( length(measures) > 1 || ! is.na(dimensions)) {
+  for(d in dimensions) {
+    # Get rid of " and ' in dimensions.
+    df[d] <- data.frame(lapply(df[d], gsub, pattern="[\"']",replacement= ""))
+    # Change & to and in dimensions.
+    df[d] <- data.frame(lapply(df[d], gsub, pattern="&",replacement= " and "))
+    # Change : to ; in dimensions.
+    df[d] <- data.frame(lapply(df[d], gsub, pattern=":",replacement= ";"))
+  }
+}
+
+
+# Get rid of all characters in measures except for numbers, the - sign, and period.dimensions
+if( length(measures) > 1 || ! is.na(measures)) {
+  for(m in measures) {
+    df[m] <- data.frame(lapply(df[m], gsub, pattern="[^--.0-9]",replacement= ""))
+  }
+}
+
+write.csv(df, paste(gsub(".csv", "", file_path), ".reformatted.csv", sep=""), row.names=FALSE, na = "")
+
+tableName <- gsub(" +", "_", gsub("[^A-z, 0-9, ]", "", gsub(".csv", "", file_path)))
+sql <- paste("CREATE TABLE", tableName, "(\n-- Change table_name to the table name you want.\n")
+if( length(measures) > 1 || ! is.na(dimensions)) {
+  for(d in dimensions) {
+    sql <- paste(sql, paste(d, "varchar2(4000),\n"))
+  }
+}
+if( length(measures) > 1 || ! is.na(measures)) {
+  for(m in measures) {
+    if(m != tail(measures, n=1)) sql <- paste(sql, paste(m, "number(38,4),\n"))
+    else sql <- paste(sql, paste(m, "number(38,4)\n"))
+  }
+}
+sql <- paste(sql, ");")
+cat(sql)
+```
+
+## Plot 1: Bar chart of Average MPG of vehicles based on transmission type using R
+The first plot in Tableau is a bar chart with a reference line that looks at the effect of transmission type on highway and city MPG. Our first impression was that a manual transmission would produce the best MPG, but we were surprised to learn that an automatic 6-speed transmission produces not only the highest city MPG but also the highest highway MPG. Doing some [further research](http://www.edmunds.com/fuel-economy/five-myths-about-stick-shifts.html), we found that manual transmissions used to be more fuel efficent, but because of recent advances in automatic transmission technology, automatic transmissions have started to become more efficient in some cases.
+
+### Plot 1: ggplot bar chart with reference line
+```{r}
+require(tidyr)
+require(dplyr)
+require(ggplot2)
+require(reshape2)
+#R workflow
+bar_chart <- vehicles %>% select(TRANY, HIGHWAY08, CITY08) %>% subset(TRANY %in% c("Automatic 3-spd", "Automatic 4-spd","Automatic 5-spd","Automatic 6-spd","Automatic 6spd","Automatic 7-spd", "Automatic 8-spd", "Automatic 9-spd", "Manual 3-spd", "Manual 4-spd", "Manual 5-spd", "Manual 5 spd", "Manual 6-spd", "Manual 7-spd")) %>% group_by(TRANY) %>% summarise(avg_city_MPG = mean(CITY08), avg_highway_MPG = mean(HIGHWAY08)) %>% melt(id.vars = c("TRANY")) %>% group_by(variable) %>% mutate(WINDOW_AVG_MPG = mean(value))
+#Plot Function to generate bar chart with reference line and values
+ggplot() + 
+  coord_cartesian() + 
+  scale_x_discrete() +
+  scale_y_continuous() +
+  facet_wrap(~variable) +
+  labs(title='Average Highway and City MPG based on transmission ') +
+  labs(x=paste("Transmission"), y=paste("MPG")) +
+  layer(data=bar_chart, 
+        mapping=aes(x=TRANY, y=value), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="bar",
+        geom_params=list(colour="blue", fill="white"), 
+        position=position_dodge()
+  ) + coord_flip() + 
+  layer(data=bar_chart, 
+        mapping=aes(x=TRANY, y=value, label=round(WINDOW_AVG_MPG, 2)), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="text",
+        geom_params=list(colour="black", hjust=2), 
+        position=position_identity()
+  ) +
+  layer(data=bar_chart, 
+        mapping=aes(yintercept = WINDOW_AVG_MPG), 
+        geom="hline",
+        geom_params=list(colour="red")
+  ) +
+  layer(data=bar_chart, 
+        mapping=aes(x=TRANY, y=value, label=round(value, 2)), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="text",
+        geom_params=list(colour="black", hjust=0), 
+        position=position_identity()
+  )
+
+
+```
+
+## Plot 2: Scatterplot of Combined MPG of all vehicles since 1984 using R
+The next tableau plot is a scatterplot that looks at how the combined MPG of all cars since 1984 has evolved over the years. This plot was created to see if a trend was present. Initially, we were fairly confident that a positive trend would be present due to the recent advances in EV technology and general improvements in the efficency of internal combustion engines.
+
+However, what we were surprised to find was how drastic and inconsistent the trend was. From 1984 to about 1998, no car that the EPA tested ever got above a combined MPG rating of 50, resutling in a relatively flat trend. Then from 1998 to 2003, there are numerous vehicles getting above the 50 MPG mark, resulting in a very steep positive trend for those years. From 2003 to just before 2010, all but one vehicle got less than 55 MPG, so there is a very steep decline and then flat trend for that time period. From 2010 onward, a steep positive trend emerges again as the number of vehicles above the 55 MPG mark explodes.  
+
+### Plot 2: ggplot scatterplot
+
+```{r}
+# This file creates the scatterplot.
+require(tidyr)
+require(dplyr)
+require(ggplot2)
+
+# This selects only the comb08 and year columns whilte transforming the year column to a date
+scatterplot <- vehicles %>% select(COMB08, YEAR) %>% transform(YEAR = as.Date(as.character(YEAR), "%Y"))
+
+ggplot() +
+  coord_cartesian() + 
+  scale_x_date() +
+  scale_y_continuous() +
+  labs(title="Combined MPG of every model year") +
+  labs(x="Year", y="Combined MPG") +
+  layer(data=scatterplot , 
+        mapping=aes(x=YEAR, y=COMB08),
+        stat="identity",
+        stat_params=list(), 
+        geom="point",
+        geom_params=list(), 
+        position=position_identity()
+  )
+```
+
+## Plot 3: Cross tab of top 20 vehicle manufacturers and the MPG to passenger volume ratio for 2 door cars since 1984 using R
+The next plot is a tableau cross tab with a Key Performance Indicator that provides a visual representation of which vehicle manufacturers produced 2 door cars that were efficent (high combined MPG) and spacious (as measured by the passenger volume of the vehicle). Plots 7 and 8 look at 4 door cars since 1984. To calculate the ratio used for the KPI, we summed up the combined MPG of all the 2 door vehicles that a manufacturer produced during a model year and divided that by the total passenger volume for all those 2 door vehicles. The KPI categories are as follows: 
+
+* Efficient and Spacious (KPI value > 2) - a manufacturer acheives this designation by offering a portfolio of 2 door cars that have a high combined MPG rating relative to the total passenger volume
+* Average Efficiency and Space (1 <= KPI value < 2) - a manufacturer acheives this designation by offering a portfolio of 2 door cars that have a combined MPG rating relatively equal to the total passenger volume
+* Not Efficient and Spacious - (KPI value < 1) a manufacturer acheives this designation by offering a portfolio of 2 door cars that have a low combined MPG relative to the total passenger volume
+
+The interesting takeaway from this graph is that it visually represents a car company's 2 door vehicle portfolio in terms of how efficent those cars are relative to how much passenger volume it has (which, for the purposes of our analysis, is used as a proxy for the size of the vehicle). It also shows that some car companies, like Chevy and Ford, have generally improved the efficency of their vehicles relative to how large the car is. There are also other companies, like Honda, that have newer vehicles achieving much worse efficieny to size ratios than the older models. 
+
+### Plot 3: ggplot cross tab for 2 door cars (PV2 KPI)
+
+```{r fig.width=15, fig.height=10}
+require(jsonlite)
+require(RCurl)
+# The following is equivalent to creat a crosstab with two KPIs in Tableau"
+MPG_PV2_KPI_LOW = 1   
+MPG_PV2_KPI_HIGH = 2
+# The following is equivalent to creat a crosstab with two KPIs in Tableau"
+crosstab <- vehicles %>% group_by(MAKE, YEAR) %>% summarize(sum_comb08 = sum(COMB08), sum_pv2 = sum(PV2),sum_pv4 = sum(PV4)) %>% mutate(ratio_1 = sum_comb08 / (sum_pv2))%>% mutate(ratio_2 = sum_comb08 / (sum_pv4)) %>% mutate(kpi_1 = ifelse(ratio_1 < MPG_PV2_KPI_LOW, '03 Not Efficient or Spacious', ifelse(ratio_1 <= MPG_PV2_KPI_HIGH, '02 Average Efficiency and Space', '01 Efficient and Spacious')))%>% mutate(kpi_2 = ifelse(ratio_2 < MPG_PV2_KPI_LOW, '03 Not Efficient or Spacious', ifelse(ratio_2 <= MPG_PV2_KPI_HIGH, '02 Average Efficiency and Space', '01 Efficient and Spacious'))) %>%filter(MAKE %in% c("Acura", "Aston Martin", "Audi", "Bentley", "BMW", "Buick", "Chevrolet", "Dodge", "Ferrari", "Ford", "Honda", "Kia", "Lincoln", "Lexus", "Maserati", "Mazda", "Mercedes-Benz", "Nissan", "Toyota", "Volkswagen")) %>% filter(ratio_1 != Inf, ratio_2 != Inf)
+
+# This line turns the make and year columns into ordered factors.
+crosstab <- crosstab %>% transform(MAKE = ordered(MAKE), YEAR = ordered(YEAR))
+#This generates the PV2 plot with combined MPG
+ggplot() +
+  coord_cartesian() + 
+  scale_x_discrete() +
+  scale_y_discrete() +
+  labs(title='Vehicle Crosstab of Efficiency/Space ratio for 2 door cars') +
+  labs(x=paste("Make"), y=paste("Year")) +
+  layer(data=crosstab, 
+        mapping=aes(x=MAKE, y=YEAR, label=round(ratio_1, 2)), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="text",
+        geom_params=list(colour="black"), 
+        position=position_identity()
+  ) +
+  layer(data=crosstab, 
+        mapping=aes(x=MAKE, y=YEAR, fill=kpi_1), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="tile",
+        geom_params=list(alpha=0.50), 
+        position=position_identity()
+  )
+```
+
+## Plot 4: Cross tab of top 20 vehicle manufacturers and the MPG to passenger volume ratio for 4 door cars since 1984 using R
+The final tableau plot is a cross tab that provides a visual representation of which vehicle manufacturers produced 4 door cars that were efficent (high combined MPG) and spacious (as measured by the passenger volume of the vehicle). To calculate the ratio used for the KPI, we summed up the combined MPG of all the 4 door vehicles that a manufacturer produced during a model year and divided that by the total passenger volume for all those 4 door vehicles. The KPI categories are as follows: 
+
+* Efficient and Spacious (KPI value > 2) - a manufacturer acheives this designation by offering a portfolio of 4 door cars that have a high combined MPG rating relative to the total passenger volume
+* Average Efficiency and Space (1 <= KPI value < 2) - a manufacturer acheives this designation by offering a portfolio of 4 door cars that have a combined MPG rating relatively equal to the total passenger volume
+* Not Efficient and Spacious - (KPI value < 1) a manufacturer acheives this designation by offering a portfolio of 4 door cars that have a low combined MPG relative to the total passenger volume
+
+The interesting takeaway from this graph is that it visually represents a car company's 4 door vehicle portfolio in terms of how efficent those cars are relative to how much passenger volume it has (which, for the purposes of our analysis, is used as a proxy for the size of the vehicle).
+
+### Plot 4: ggplot cross tab for 2 door cars (PV4 KPI) 
+
+```{r fig.width=15, fig.height=10}
+#This generates the PV4 with combined MPG plot
+ggplot() +
+  coord_cartesian() + 
+  scale_x_discrete() +
+  scale_y_discrete() +
+  labs(title='Vehicle Crosstab of Efficiency/Space ratio for 4 door cars') +
+  labs(x=paste("Make"), y=paste("Year")) +
+  layer(data=crosstab, 
+        mapping=aes(x=MAKE, y=YEAR, label=round(ratio_2, 2)), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="text",
+        geom_params=list(colour="black"), 
+        position=position_identity()
+  ) +
+  layer(data=crosstab, 
+        mapping=aes(x=MAKE, y=YEAR, fill=kpi_2), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="tile",
+        geom_params=list(alpha=0.50), 
+        position=position_identity()
+  ) 
+```
