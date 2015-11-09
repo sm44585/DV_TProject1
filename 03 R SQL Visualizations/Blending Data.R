@@ -10,7 +10,7 @@ df <- data.frame(fromJSON(getURL(URLencode(gsub("\n", " ", 'skipper.cs.utexas.ed
 where YEAR between 2009 and 2014
 group by YEAR
 union all
-select YERA || \\\'   Total_Vehicles_Sold\\\' as measure_names, CAR_SALE as measure_values from CAR_SALE
+select YEAR || \\\'   Total_Vehicles_Sold\\\' as measure_names, CAR_SALE as measure_values from CAR_SALE
 where YEAR between 2009 and 2014
 order by measure_names;"
 ')), httpheader=c(DB='jdbc:oracle:thin:@sayonara.microlab.cs.utexas.edu:1521:orcl', USER='C##cs329e_cz4795', PASS='orcl_cz4795', MODE='native_mode', MODEL='model', returnDimensions = 'False', returnFor = 'JSON', p1=KPI_Low_Max_value, p2=KPI_Medium_Max_value), verbose = TRUE))); View(df)
