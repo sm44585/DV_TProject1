@@ -5,9 +5,9 @@ date: "November 13, 2015"
 output: html_document
 ---
 # Exploring U.S MPG data to create interesting visual representations for analysis SQL and R Studio
-For this project, we looked at the Environmental Protection Agency's [fuel economy data](https://www.fueleconomy.gov/feg/download.shtml) for every vehicle tested at the National Vehicle and Fuel Emissions Laboratory in Ann Arbor, Michigan since 1984. This dataset has data on almost 37,000 different vehicles, and includes many attributes to analyze. This is the R and SQL replication of the Tableau visualizations in Project 4
+For this project, we looked at the Environmental Protection Agency's [fuel economy data](https://www.fueleconomy.gov/feg/download.shtml) for every vehicle tested at the National Vehicle and Fuel Emissions Laboratory in Ann Arbor, Michigan since 1984. This dataset has data on almost 37,000 different vehicles, and includes many attributes to analyze. This is the R and SQL replication of the Tableau visualizations in Project 4. In addtion, we created our own dataset called CAR_Sales which contains the total number of cars sold in the US from 1984 to 2014. The numbers came from [this website.](http://www.statista.com/statistics/199974/us-car-sales-since-1951/)
 
-###Summary of dataset and first ten rows
+###Summary of vehicles dataset and first ten rows
 ```{r}
 require("jsonlite")
 require("RCurl")
@@ -18,6 +18,18 @@ vehicles <- data.frame(fromJSON(getURL(URLencode('skipper.cs.utexas.edu:5001/res
 
 summary(vehicles)
 
+```
+
+###Summary of Car_Sale dataset and first ten rows
+```{r}
+require("jsonlite")
+require("RCurl")
+
+# Loads the data from Total Car Sales table into CAR_Sale dataframe
+# Change the USER and PASS below to be your UTEid
+CAR_Sale <- data.frame(fromJSON(getURL(URLencode('skipper.cs.utexas.edu:5001/rest/native/?query="select YEAR, CAR_SALE from CAR_SALE"'),httpheader=c(DB='jdbc:oracle:thin:@sayonara.microlab.cs.utexas.edu:1521:orcl', USER='C##cs329e_cz4795', PASS='orcl_cz4795', MODE='native_mode', MODEL='model', returnDimensions = 'False', returnFor = 'JSON'), verbose = TRUE),))
+
+summary(CAR_Sale)
 ```
 
 ### A detailed explanation of each column that we used in the vehicles dataset:  
@@ -49,7 +61,12 @@ summary(vehicles)
 * TRANY - transmission
 * YEAR - model year
 
-###Extract, Load, Transform (ELT) Script for Oracle
+### A detailed explanation of each column that we used in the Car_Sale dataset:
+
+* YEAR - From January 1 to December 31
+* CAR_SALE - Total cars sold in the US for that year
+
+###Extract, Load, Transform (ELT) Script for uploading Vehicle dataset into Oracle
 ```
 #Before running this R file make sure you set you working directory to where the CSV file located.
 
@@ -113,6 +130,71 @@ sql <- paste(sql, ");")
 cat(sql)
 ```
 
+###Extract, Load, Transform (ELT) Script for uploading Car_Sale dataset into Oracle
+```
+#Before running this R file make sure you set you working directory to where the CSV file located.
+
+file_path <- "Car_Sale.csv"
+
+df <- read.csv(file_path, stringsAsFactors = FALSE)
+
+# Replace "." (i.e., period) with "_" in the column names.
+names(df) <- gsub("\\.+", "_", names(df))
+
+str(df) # Uncomment this and  run just the lines to here to get column types to use for getting the list of measures.
+
+
+# Generate List of Measures
+measures <- c("Car_Sale")
+
+# Get rid of special characters in each column.
+# Google ASCII Table to understand the following:
+for(n in names(df)) {
+  df[n] <- data.frame(lapply(df[n], gsub, pattern="[^ -~]",replacement= ""))
+}
+
+dimensions <- setdiff(names(df), measures)
+
+#dimensions
+if( length(measures) > 1 || ! is.na(dimensions)) {
+  for(d in dimensions) {
+    # Get rid of " and ' in dimensions.
+    df[d] <- data.frame(lapply(df[d], gsub, pattern="[\"']",replacement= ""))
+    # Change & to and in dimensions.
+    df[d] <- data.frame(lapply(df[d], gsub, pattern="&",replacement= " and "))
+    # Change : to ; in dimensions.
+    df[d] <- data.frame(lapply(df[d], gsub, pattern=":",replacement= ";"))
+  }
+}
+
+
+# Get rid of all characters in measures except for numbers, the - sign, and period.dimensions
+if( length(measures) > 1 || ! is.na(measures)) {
+  for(m in measures) {
+    df[m] <- data.frame(lapply(df[m], gsub, pattern="[^--.0-9]",replacement= ""))
+  }
+}
+
+write.csv(df, paste(gsub(".csv", "", file_path), ".reformatted.csv", sep=""), row.names=FALSE, na = "")
+
+tableName <- gsub(" +", "_", gsub("[^A-z, 0-9, ]", "", gsub(".csv", "", file_path)))
+sql <- paste("CREATE TABLE", tableName, "(\n-- Change table_name to the table name you want.\n")
+if( length(measures) > 1 || ! is.na(dimensions)) {
+  for(d in dimensions) {
+    sql <- paste(sql, paste(d, "varchar2(4000),\n"))
+  }
+}
+if( length(measures) > 1 || ! is.na(measures)) {
+  for(m in measures) {
+    if(m != tail(measures, n=1)) sql <- paste(sql, paste(m, "number(38,4),\n"))
+    else sql <- paste(sql, paste(m, "number(38,4)\n"))
+  }
+}
+sql <- paste(sql, ");")
+cat(sql)
+
+
+```
 ## Plot 1: Bar chart of Average MPG of vehicles based on transmission type using R
 The first plot in Tableau is a bar chart with a reference line that looks at the effect of transmission type on highway and city MPG. Our first impression was that a manual transmission would produce the best MPG, but we were surprised to learn that an automatic 6-speed transmission produces not only the highest city MPG but also the highest highway MPG. Doing some [further research](http://www.edmunds.com/fuel-economy/five-myths-about-stick-shifts.html), we found that manual transmissions used to be more fuel efficent, but because of recent advances in automatic transmission technology, automatic transmissions have started to become more efficient in some cases.
 
@@ -279,4 +361,62 @@ ggplot() +
         geom_params=list(alpha=0.50), 
         position=position_identity()
   ) 
+```
+
+
+##Plot 5: Data Blending of Vehicles and Car_Sales datasets
+For this plot, we blended together the vehicles and car sales datasets based on the year. In other words, the vehicles dataset was grouped by the model year to get a count of the number of vehicles that the EPA tested for that model year and was blended with the Car Sales dataset based on the year. This gave us the ability to see what relationship existed between the number of cars the EPA tested and the number of cars sold in the United States for a given year.
+
+In order to produce a good visualization, we had to filter the data to model years 2009 to 2014. Also, the number of cars tested by the EPA is significantly smaller than the total car sales for any given year so while it may not look like two bars are shown for each year, there is in fact one bar for the total number of cars tested by the EPA for a model year and another bar for the total number of cars sold for that model year.
+
+We were surprised to learn that the EPA, on average from 2009 to 2014, tests roughly the same number of vehicles per model year, despite the fact that the number of vehicles sold during that time period has increased by almost 50%! This could be due to a number of things including perhaps the EPA has the testing capacity limit on the number of vehicles they can test per year.
+
+###Plot 5: Data Blending in Tableau
+![Plot 5 Tableau Blending ](./Tableau_Blending_Data.png)
+
+
+###Plot 5: Data Blending in R
+```{r fig.width=15, fig.height=10}
+require("jsonlite")
+require("RCurl")
+require(ggplot2)
+require(dplyr)
+
+# The following is equivalent to "04 Blending 2 Data Sources.twb"
+
+df <- data.frame(fromJSON(getURL(URLencode(gsub("\n", " ", 'skipper.cs.utexas.edu:5001/rest/native/?query=
+"select YEAR || \\\'   Total_Vehicles_Tested\\\' as measure_names, count(MAKE) as measure_values from VEHICLES
+where YEAR between 2009 and 2014
+group by YEAR
+union all
+select YEAR || \\\'   Total_Vehicles_Sold\\\' as measure_names, CAR_SALE as measure_values from CAR_SALE
+where YEAR between 2009 and 2014
+order by measure_names;"
+')), httpheader=c(DB='jdbc:oracle:thin:@sayonara.microlab.cs.utexas.edu:1521:orcl', USER='C##cs329e_cz4795', PASS='orcl_cz4795', MODE='native_mode', MODEL='model', returnDimensions = 'False', returnFor = 'JSON'), verbose = TRUE))); 
+
+ggplot() + 
+  coord_cartesian() + 
+  scale_x_discrete() +
+  scale_y_continuous() +
+  #facet_wrap(~CLARITY, ncol=1) +
+  labs(title='Blending 2 Data Sources') +
+  labs(x=paste("Year Sales"), y=paste("Value")) +
+  layer(data=df, 
+        mapping=aes(x=MEASURE_NAMES, y=MEASURE_VALUES), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="bar",
+        geom_params=list(colour="blue"), 
+        position=position_identity()
+  ) + coord_flip() +
+  layer(data=df, 
+        mapping=aes(x=MEASURE_NAMES, y=MEASURE_VALUES, label=round(MEASURE_VALUES)), 
+        stat="identity", 
+        stat_params=list(), 
+        geom="text",
+        geom_params=list(colour="black", hjust=-0.5), 
+        position=position_identity()
+  ) 
+
+
 ```
